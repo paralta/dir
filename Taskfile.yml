@@ -154,7 +154,7 @@ tasks:
     cmds:
       - for:
           matrix:
-            OS: ["linux", "darwin"]
+            OS: ["linux", "darwin", "windows"]
             ARCH: ["amd64", "arm64"]
         cmd: GOOS={{.ITEM.OS}} GOARCH={{.ITEM.ARCH}} BINARY_NAME=dirctl-{{.ITEM.OS}}-{{.ITEM.ARCH}} task cli:compile
 
