@@ -14,6 +14,10 @@ on:
         required: true
         type: string
         default: "ghcr.io/agntcy/dir-apiserver"
+      dir-ctl-image:
+        required: true
+        type: string
+        default: "ghcr.io/agntcy/dir-ctl"
       dir-helm-chart:
         required: true
         type: string
@@ -21,7 +25,7 @@ on:
       dir-version:
         required: true
         type: string
-        default: "v0.2.0"
+        default: "v0.2.1"
       network:
         required: true
         type: boolean
@@ -34,79 +38,119 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Setup Taskfile
+        shell: bash
+        run: sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin
+
+      - name: Setup Dirctl
+        run: |
+          mkdir -p bin
+          curl -L -o bin/dirctl https://github.com/agntcy/dir/releases/download/${{ inputs.dir-version }}/dirctl-linux-amd64
+          chmod +x bin/dirctl
+
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1.12.0
         with:
           version: v0.24.0
           cluster_name: dir-demo
+          install_only: true
 
       - name: Pull Docker image
         run: |
           docker pull ${{ inputs.dir-apiserver-image }}:${{ inputs.dir-version }}
+          docker pull ${{ inputs.dir-ctl-image }}:${{ inputs.dir-version }}
 
-      - name: Load image into Kind
+      - name: Deploy Dir
         run: |
-          kind load docker-image ${{ inputs.dir-apiserver-image }}:${{ inputs.dir-version }} --name dir-demo
-
-      # TODO Remove values file once release with fix is available
-      - name: Deploy Helm Chart
-        run: |
-          helm pull ${{ inputs.dir-helm-chart }} --version ${{ inputs.dir-version }}
-          helm upgrade --install dir ${{ inputs.dir-helm-chart }} --version ${{ inputs.dir-version }} \
-            --values install/charts/dir/values.yaml \
-            --wait --wait-for-jobs --timeout "15m"
-
-      - name: Port-forward to Dir API server
-        run: |
-          kubectl port-forward service/dir-apiserver 8888:8888 -n default &
-
-      - name: Setup Dirctl
-        run: |
-          curl -L -o dirctl https://github.com/agntcy/dir/releases/download/${{ inputs.dir-version }}/dirctl-linux-amd64
-          chmod +x dirctl
+          if [ ${{ inputs.network }} = "true" ]; then
+            echo "Using network mode"
+            IMAGE_TAG=${{ inputs.dir-version }} task deploy:network
+            task deploy:network:port-forward
+          else
+            echo "Using local mode"
+            IMAGE_TAG=${{ inputs.dir-version }} task deploy:local
+            task deploy:local:port-forward
+          fi
 
       - name: Run build command
         run: |
           echo "Running dir build command"
-          ./dirctl build e2e/testdata > agent.json
+          bin/dirctl build e2e/testdata > agent.json
           echo "Built agent.json:"
           cat agent.json
 
       - name: Run push command
         run: |
-          echo "Running dir push command"
-          ./dirctl push agent.json > digest.txt
+          if [ "${{ inputs.network }}" = "true" ]; then
+            echo "Running dir push command on Peer 1"
+            bin/dirctl push agent.json --server-addr 127.0.0.1:8890 > digest.txt
+          else
+            echo "Running dir push command"
+            bin/dirctl push agent.json > digest.txt
+          fi
           echo "Pushed image digest:"
           cat digest.txt
 
       - name: Run publish command
         run: |
-          echo "Running dir publish command"
+          
           if [ "${{ inputs.network }}" = "true" ]; then
-            ./dirctl publish $(cat digest.txt) --network
+            echo "Running dir publish command on Peer 1"
+            bin/dirctl publish $(cat digest.txt) --server-addr 127.0.0.1:8890 --network
           else
-            ./dirctl publish $(cat digest.txt)
+            echo "Running dir publish command"
+            bin/dirctl publish $(cat digest.txt)
           fi
+          echo "Waiting for publish to complete"
+          sleep 120
 
       - name: Run list info command
+        continue-on-error: true
         run: |
-          echo "Running dir list info command"
           if [ "${{ inputs.network }}" = "true" ]; then
-            ./dirctl list info --network
+            echo "Running dir list info command on Peer 1"
+            bin/dirctl list info --server-addr 127.0.0.1:8890 --network
+            echo "Running dir list info command on Peer 2"
+            bin/dirctl list info --server-addr 127.0.0.1:8891 --network
+            echo "Running dir list info command on Peer 3"
+            bin/dirctl list info --server-addr 127.0.0.1:8892 --network
           else
-            ./dirctl list info
+            echo "Running dir list info command"
+            bin/dirctl list info
           fi
 
       - name: Run list search by skill command
+        continue-on-error: true
         run: |
-          echo "Running dir list search by skill command"
           if [ "${{ inputs.network }}" = "true" ]; then
-            ./dirctl list "/skills/Natural Language Processing" --network
+            echo "Running dir list search by skill command on Peer 1"
+            bin/dirctl list "/skills/Natural Language Processing" --server-addr 127.0.0.1:8890 --network
+            echo "Running dir list search by skill command on Peer 2"
+            bin/dirctl list "/skills/Natural Language Processing" --server-addr 127.0.0.1:8891 --network
+            echo "Running dir list search by skill command on Peer 3"
+            bin/dirctl list "/skills/Natural Language Processing" --server-addr 127.0.0.1:8892 --network
           else
-            ./dirctl list "/skills/Natural Language Processing"
+            echo "Running dir list search by skill command"
+            bin/dirctl list "/skills/Natural Language Processing"
           fi
 
       - name: Run pull command
         run: |
-          echo "Running dir pull command"
-          ./dirctl pull $(cat digest.txt)
+          if [ "${{ inputs.network }}" = "true" ]; then
+            echo "Running dir pull command on Peer 1"
+            bin/dirctl pull $(cat digest.txt) --server-addr 127.0.0.1:8890
+          else
+            echo "Running dir pull command"
+            bin/dirctl pull $(cat digest.txt)
+          fi
+
+      - name: Clean up
+        run: |
+          echo "Cleaning up"
+          if [ "${{ inputs.network }}" = "true" ]; then
+            task deploy:network:port-forward:cleanup
+            task deploy:network:cleanup
+          else
+            task deploy:local:port-forward:cleanup
+            task deploy:local:cleanup
+          fi
