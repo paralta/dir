@@ -33,4 +33,6 @@ func init() {
 		"OIDC Provider URL")
 	flags.StringVar(&opts.OIDCClientID, "oidc-client-id", client.DefaultOIDCClientID,
 		"OIDC Client ID")
+	flags.StringVar(&opts.Key, "key", "",
+		"Path to the private key file to use for signing. ")
 }
