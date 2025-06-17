@@ -32,10 +32,12 @@ jobs:
 
       - name: Write Cosign private key
         run: |
-          echo "Writing Cosign private key"
+          echo "Writing Cosign private and public keys"
           echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
+          echo "${{ secrets.COSIGN_PUBLIC_KEY }}" > cosign.pub
           chmod 600 cosign.key
-          echo "Cosign private key written"
+          chmod 644 cosign.pub
+          echo "Cosign private and public keys written successfully"
 
       - name: Run build command
         run: |
@@ -50,3 +52,9 @@ jobs:
           bin/dirctl sign agent.json --key cosign.key --stdin > signed.model.json
           echo "Signed agent.json to signed.model.json"
           cat signed.model.json
+          mv signed.model.json agent.json
+
+      - name: Run verify command
+        run: |
+          echo "Running dir verify command"
+          bin/dirctl verify agent.json --key cosign.pub
