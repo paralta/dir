@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 
@@ -113,10 +114,10 @@ func (c *Client) VerifyOIDC(_ context.Context, expectedIssuer, expectedSigner st
 }
 
 func (c *Client) VerifyWithKey(_ context.Context, key []byte, agent *coretypes.Agent) error {
+	// Validate request.
 	if len(key) == 0 {
 		return errors.New("key must not be empty")
 	}
-
 	if agent == nil {
 		return errors.New("agent must be set")
 	}
@@ -140,14 +141,23 @@ func (c *Client) VerifyWithKey(_ context.Context, key []byte, agent *coretypes.A
 	if sigBundleVerificationMaterial == nil {
 		return errors.New("signature bundle has no verification material")
 	}
-
 	pubKey := sigBundleVerificationMaterial.GetPublicKey()
 	if pubKey == nil {
 		return errors.New("signature bundle verification material has no public key")
 	}
 
-	if pubKey.GetHint() != string(key) {
-		return fmt.Errorf("public key hint mismatch: expected %s, got %s", key, pubKey.GetHint())
+	// Decode the PEM-encoded public key and generate the expected hint.
+	p, _ := pem.Decode(key)
+	if p == nil {
+		return errors.New("failed to decode PEM block containing public key")
+	}
+	if p.Type != "PUBLIC KEY" {
+		return fmt.Errorf("unexpected PEM type: %s", p.Type)
+	}
+	expectedHint := string(GenerateHintFromPublicKey(p.Bytes))
+
+	if pubKey.GetHint() != expectedHint {
+		return fmt.Errorf("public key hint mismatch: expected %s, got %s", expectedHint, pubKey.GetHint())
 	}
 
 	return nil
