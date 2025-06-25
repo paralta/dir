@@ -33,6 +33,8 @@ func init() {
 		"OIDC Provider URL")
 	flags.StringVar(&opts.OIDCClientID, "oidc-client-id", client.DefaultOIDCClientID,
 		"OIDC Client ID")
+	flags.StringVar(&opts.OIDCToken, "oidc-token", "",
+		"OIDC ID Token to use for keyless signing. This token is used to authenticate with the OIDC provider and obtain a signing certificate. ")
 	flags.StringVar(&opts.Key, "key", "",
 		"Path to the private key file to use for signing (e.g., a Cosign key generated with a GitHub token). Use this option to sign with a self-managed keypair instead of OIDC identity-based signing.")
 }

@@ -1,0 +1,20 @@
+builder:
+  # Base agent model path.
+  # Path is either absolute or relative to this build config file.
+  base-model: "github.record.json"
+
+  # List of paths to ignore
+  source-ignore:
+    - ".venv/"
+
+  # Enable or disable the LLMAnalyzer plugin
+  llmanalyzer: false
+
+  # Enable or disable the runtime plugin
+  runtime: false
+
+  # Enable or disable the pyprojectparser plugin
+  pyprojectparser: false
+
+  # Enable or disable OASF validation
+  oasf-validation: false
